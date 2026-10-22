@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 
-const FROM = 27 // شروع تکه‌ی آهنگ (ثانیه)
-const TO = 85   // پایان تکه‌ی آهنگ (ثانیه)
+const FROM = 27
+const TO = 85
 
 export default function Home() {
   const [data, setData] = useState({ start: null, quotes: [] })
@@ -11,14 +11,20 @@ export default function Home() {
   const [hearts, setHearts] = useState([])
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef(null)
+  const readyRef = useRef(false) // آیا metadata لود شده؟
 
-  // پخش از ابتدای تکه
-  const play = () => {
+  // قبل از play مطمئن می‌شیم زمان توی بازه‌ست
+  const play = async () => {
     const a = audioRef.current
     if (!a) return
     if (a.currentTime < FROM || a.currentTime >= TO) a.currentTime = FROM
-    a.play().catch(() => {})
+    try {
+      await a.play()
+    } catch (err) {
+      // مرورگر اجازه نداد؛ منتظر تعامل کاربر می‌مونیم
+    }
   }
+
   const toggle = () => {
     const a = audioRef.current
     if (!a) return
@@ -42,20 +48,37 @@ export default function Home() {
     return () => clearInterval(b)
   }, [data.quotes.length])
 
-  // اول سعی می‌کند خودکار پخش کند؛ اگر مرورگر نگذاشت، با اولین لمس/کلیک شروع می‌شود
+  // تلاش برای autoplay؛ اگه نشد، با اولین تعامل کاربر (به‌جز دکمه‌ی موزیک)
   useEffect(() => {
     const a = audioRef.current
     if (!a) return
-    const ev = ['click', 'touchend', 'keydown']
-    const off = () => ev.forEach((e) => window.removeEventListener(e, kick))
-    const kick = (e) => {
-      off()
-      if (e.target.closest?.('.music')) return // خود دکمه کارش را می‌کند
+
+    const events = ['pointerdown', 'keydown']
+    const cleanup = () => events.forEach((e) => window.removeEventListener(e, kick, true))
+
+    function kick(e) {
+      // اگه کلیک روی دکمه‌ی موزیک بود، کاری نکن
+      if (e.target instanceof Element && e.target.closest('.music')) return
+      cleanup()
       if (a.paused) play()
     }
-    a.currentTime = FROM
-    a.play().catch(() => ev.forEach((e) => window.addEventListener(e, kick)))
-    return off
+
+    const tryAutoplay = async () => {
+      try {
+        a.currentTime = FROM
+        await a.play()
+      } catch {
+        events.forEach((e) => window.addEventListener(e, kick, true))
+      }
+    }
+
+    if (a.readyState >= 1) tryAutoplay()
+    else a.addEventListener('loadedmetadata', tryAutoplay, { once: true })
+
+    return () => {
+      cleanup()
+      a.removeEventListener('loadedmetadata', tryAutoplay)
+    }
   }, [])
 
   const start = data.start ? new Date(data.start + 'T00:00:00').getTime() : new Date().setHours(0, 0, 0, 0)
@@ -73,28 +96,35 @@ export default function Home() {
         ref={audioRef}
         src="/music/3TARE.mp3"
         preload="auto"
-        onLoadedMetadata={(e) => { if (e.target.paused) e.target.currentTime = FROM }}
-        onTimeUpdate={(e) => { const a = e.target; if (a.currentTime >= TO) a.currentTime = FROM }}
+        onLoadedMetadata={(e) => {
+          readyRef.current = true
+          if (e.target.paused) e.target.currentTime = FROM
+        }}
+        onTimeUpdate={(e) => {
+          const a = e.target
+          if (a.currentTime >= TO) a.currentTime = FROM
+        }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
       />
-     <button
-     style={{position:"absolute" , top:75 , left:15}}
-  className={'music' + (playing ? ' on' : '')}
-  onClick={toggle}
-  aria-label={playing ? 'Pause music' : 'Play music'}
->
-  <span className="ring" />
-  {playing ? (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-      <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 0 1 .75-.75H9a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H7.5a.75.75 0 0 1-.75-.75V5.25Zm7.5 0A.75.75 0 0 1 15 4.5h1.5a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H15a.75.75 0 0 1-.75-.75V5.25Z" clipRule="evenodd" />
-    </svg>
-  ) : (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-      <path fillRule="evenodd" d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z" clipRule="evenodd" />
-    </svg>
-  )}
-</button>
+
+      <button
+        style={{ position: 'absolute', top: 75, left: 15 }}
+        className={'music' + (playing ? ' on' : '')}
+        onClick={toggle}
+        aria-label={playing ? 'Pause music' : 'Play music'}
+      >
+        <span className="ring" />
+        {playing ? (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 0 1 .75-.75H9a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H7.5a.75.75 0 0 1-.75-.75V5.25Zm7.5 0A.75.75 0 0 1 15 4.5h1.5a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H15a.75.75 0 0 1-.75-.75V5.25Z" clipRule="evenodd" />
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path fillRule="evenodd" d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z" clipRule="evenodd" />
+          </svg>
+        )}
+      </button>
 
       <main>
         <h1>Days without you</h1>
