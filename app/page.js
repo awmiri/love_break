@@ -1,9 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 
-const FROM = 27
-const TO = 85
-
 export default function Home() {
   const [data, setData] = useState({ start: null, quotes: [] })
   const [now, setNow] = useState(Date.now())
@@ -11,19 +8,8 @@ export default function Home() {
   const [hearts, setHearts] = useState([])
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef(null)
-  const readyRef = useRef(false) // آیا metadata لود شده؟
 
-  // قبل از play مطمئن می‌شیم زمان توی بازه‌ست
-  const play = async () => {
-    const a = audioRef.current
-    if (!a) return
-    if (a.currentTime < FROM || a.currentTime >= TO) a.currentTime = FROM
-    try {
-      await a.play()
-    } catch (err) {
-      // مرورگر اجازه نداد؛ منتظر تعامل کاربر می‌مونیم
-    }
-  }
+  const play = () => audioRef.current?.play().catch(() => {})
 
   const toggle = () => {
     const a = audioRef.current
@@ -48,36 +34,26 @@ export default function Home() {
     return () => clearInterval(b)
   }, [data.quotes.length])
 
-  // تلاش برای autoplay؛ اگه نشد، با اولین تعامل کاربر (به‌جز دکمه‌ی موزیک)
+  // تلاش برای autoplay؛ اگه مرورگر اجازه نداد، با اولین لمس (بیرون از دکمه‌ی موزیک) شروع می‌شه
   useEffect(() => {
     const a = audioRef.current
     if (!a) return
 
-    const events = ['pointerdown', 'keydown']
-    const cleanup = () => events.forEach((e) => window.removeEventListener(e, kick, true))
-
-    function kick(e) {
-      // اگه کلیک روی دکمه‌ی موزیک بود، کاری نکن
+    const onFirst = (e) => {
       if (e.target instanceof Element && e.target.closest('.music')) return
-      cleanup()
-      if (a.paused) play()
+      window.removeEventListener('pointerdown', onFirst, true)
+      window.removeEventListener('keydown', onFirst, true)
+      if (a.paused) a.play().catch(() => {})
     }
 
-    const tryAutoplay = async () => {
-      try {
-        a.currentTime = FROM
-        await a.play()
-      } catch {
-        events.forEach((e) => window.addEventListener(e, kick, true))
-      }
-    }
-
-    if (a.readyState >= 1) tryAutoplay()
-    else a.addEventListener('loadedmetadata', tryAutoplay, { once: true })
+    a.play().catch(() => {
+      window.addEventListener('pointerdown', onFirst, true)
+      window.addEventListener('keydown', onFirst, true)
+    })
 
     return () => {
-      cleanup()
-      a.removeEventListener('loadedmetadata', tryAutoplay)
+      window.removeEventListener('pointerdown', onFirst, true)
+      window.removeEventListener('keydown', onFirst, true)
     }
   }, [])
 
@@ -95,21 +71,14 @@ export default function Home() {
       <audio
         ref={audioRef}
         src="/music/3TARE.mp3"
+        loop
         preload="auto"
-        onLoadedMetadata={(e) => {
-          readyRef.current = true
-          if (e.target.paused) e.target.currentTime = FROM
-        }}
-        onTimeUpdate={(e) => {
-          const a = e.target
-          if (a.currentTime >= TO) a.currentTime = FROM
-        }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
       />
 
       <button
-        style={{ position: 'absolute', top: 75, left: 15 }}
+        style={{ position: 'fixed', top: 75, left: 15, zIndex: 10 }}
         className={'music' + (playing ? ' on' : '')}
         onClick={toggle}
         aria-label={playing ? 'Pause music' : 'Play music'}
